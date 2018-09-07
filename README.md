@@ -43,7 +43,7 @@ Watch out! If your certificate is stolen, anyone will be able to use it to conne
 ![Client creation](/png/3.png)
 
 # Client revoking
-If you revoke a client you will be able to create a new client with the same name of the revoked one.
+If you revoke a client you will be able to create a new client with the same name as the revoked one.
 
 ![Client revoking](/png/4.png)
 
