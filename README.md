@@ -1,6 +1,6 @@
 # VPN installer
 
-This script will walk you through the installation of an OpenVPN server. It begins asking basic questions like the protocol, the port, DNS and the kind of encryption you want to use. Then it will automatically download necessary packages, configure the firewall and the server itself. The default setting are secure enough, so if you are not sure you can just press enter and let the script proceed. After the installation, you can use the same script to generate, list or revoke clients.
+This script will walk you through the installation of an OpenVPN server. It begins asking basic questions like the protocol, the port, DNS and the kind of encryption you want to use. Then it will automatically download necessary packages, configure the firewall and the server itself. The default settings are secure enough, so if you are not sure you can just press enter and let the script proceed. After the installation, you can use the same script to generate, list or revoke clients.
 
 # Why?
 By default, the server is set up to redirect all your internet traffic through the VPN tunnel. Therefore, you can use it to securely connect to machines inside your home network, browse the web when your smartphone is connected to a public wifi without risk of eavesdropping or bypass network restrictions (DNS filtering, IP blocking, ecc.).
@@ -24,7 +24,7 @@ sudo ./vpn-installer.sh
 * TCP/UDP protocol (default UDP)
 * System/Google/OpenDNS/Quad9/Cloudflare/Custom DNS servers
 * Connect via public IP or domain name
-* No/LZ0/LZ4 compression (default No, because of [possible attacks](https://www.mail-archive.com/openvpn-devel@lists.sourceforge.net/msg16919.html))
+* No/LZO/LZ4 compression (default No, because of [possible attacks](https://www.mail-archive.com/openvpn-devel@lists.sourceforge.net/msg16919.html))
 * RSA/ECDSA certificates (default ECDSA, curve prime256v1)
 * AES-128-CBC, AES-192-CBC, AES-256-CBC encryption (default AES-128-CBC)
 * SHA-256, SHA-384, SHA-512 digest (default SHA-256)
