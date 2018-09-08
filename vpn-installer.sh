@@ -583,8 +583,8 @@ configure_firewall(){
         
         # If ufw is active, by default it has policy DROP both on INPUT as well as FORWARD,
         # so we need to allow connections to the port and explicitly forward packets.
-        ufw allow "$PORT"/"$PROTO"
-        ufw route allow in on tun0 from 10.8.0.0/24 out on "$IFACE" to any
+        ufw insert 1 allow "$PORT"/"$PROTO"
+        ufw route insert 1 allow in on tun0 from 10.8.0.0/24 out on "$IFACE" to any
         
         # There is no front-end commmand to perform masquerading, so we need to edit the rules file.
         sed "/delete these required/i *nat\n:POSTROUTING ACCEPT [0:0]\n-I POSTROUTING -s 10.8.0.0/24 -o $IFACE -j MASQUERADE\nCOMMIT\n" -i /etc/ufw/before.rules
@@ -1059,7 +1059,7 @@ uninstall_server(){
         # Removing firewall rules.
         if [ "$USE_UFW" = "true" ]; then
             ufw delete allow "$PORT"/"$PROTO"
-            ufw delete route allow in on tun0 from 10.8.0.0/24 out on "$IFACE" to any
+            ufw route delete allow in on tun0 from 10.8.0.0/24 out on "$IFACE" to any
             sed -z "s/*nat\n:POSTROUTING ACCEPT \[0:0\]\n-I POSTROUTING -s 10.8.0.0\/24 -o $IFACE -j MASQUERADE\nCOMMIT\n\n//" -i /etc/ufw/before.rules
             ufw reload
         elif [ "$USE_UFW" = "false" ]; then
