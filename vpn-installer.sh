@@ -603,14 +603,14 @@ configure_firewall(){
         local FORWARD_POLICY="$(iptables -S FORWARD | grep '^-P' | awk '{print $3}')"
 
         # If rules count is not zero, we assume we need to explicitly allow traffic. Same conclusion if
-        # there are no rules but the policy is DROP. Note that rules are being added to the top of the
+        # there are no rules and the policy is not ACCEPT. Note that rules are being added to the top of the
         # chain (using -I).
-        if [ "$INPUT_RULES_COUNT" -ne 0 ] || [ "$INPUT_POLICY" = "DROP" ]; then
+        if [ "$INPUT_RULES_COUNT" -ne 0 ] || [ "$INPUT_POLICY" != "ACCEPT" ]; then
             iptables -I INPUT 1 -i "$IFACE" -p "$PROTO" -m "$PROTO" --dport "$PORT" -j ACCEPT
             INPUT_CHAIN_EDITED="true"
         fi
 
-        if [ "$FORWARD_RULES_COUNT" -ne 0 ] || [ "$FORWARD_POLICY" = "DROP" ]; then
+        if [ "$FORWARD_RULES_COUNT" -ne 0 ] || [ "$FORWARD_POLICY" != "ACCEPT" ]; then
             iptables -I FORWARD 1 -d 10.8.0.0/24 -i "$IFACE" -o tun0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
             iptables -I FORWARD 2 -s 10.8.0.0/24 -i tun0 -o "$IFACE" -j ACCEPT
             FORWARD_CHAIN_EDITED="true"
