@@ -31,6 +31,7 @@ main() {
             ;;
             *)
             exit 1
+            ;;
         esac
     else
         install_server
@@ -84,6 +85,7 @@ install_server(){
         create_pki
         create_server_template
         create_client_template
+        start_services
         
         echo -e "Installation has been completed, run the script again to create a configuration file for a client\n"
         read -r -p "It is recommended to reboot after installation, reboot now? [Y/n] "
@@ -111,40 +113,53 @@ check_distro(){
     # to add the specific repository.
     if [ "$NAME" = "Debian GNU/Linux" ]; then
 
-        if [ "$VERSION_ID" = "9" ]; then
+        case "$VERSION_ID" in
+            "9")
             NEED_REPO="false"
-        elif [ "$VERSION_ID" = "8" ]; then
+            ;;
+            "8")
             CODENAME="jessie"
-        elif [ "$VERSION_ID" = "7" ]; then
+            ;;
+            "7")
             CODENAME="wheezy"
-        else
+            ;;
+            *)
             COMPATIBLE="false"
-        fi
+            ;;
+        esac
 
     elif [ "$NAME" = "Ubuntu" ]; then
 
-        if [ "$VERSION_ID" = "18.04" ]; then
+        case "$VERSION_ID" in
+            "18.04")
             NEED_REPO="false"
-        elif [ "$VERSION_ID" = "16.04" ]; then
+            ;;
+            "16.04")
             CODENAME="xenial"
-        elif [ "$VERSION_ID" = "14.04" ]; then
+            ;;
+            "14.04")
             CODENAME="trusty"
-        else
+            ;;
+            *)
             COMPATIBLE="false"
-        fi
+            ;;
+        esac
 
     elif [ "$NAME" = "Raspbian GNU/Linux" ]; then
 
-        if [ "$VERSION_ID" = "9" ]; then
+        case "$VERSION_ID" in
+            "9")
             NEED_REPO="false"
-        elif [ "$VERSION_ID" = "8" ]; then
+            ;;
+            "8")
             NEED_REPO="false"
-
             # In legacy mode for Raspbian 8, ECDSA, LZ4 compression and tls-crypt can't be used.
             LEGACY="true"
-        else
+            ;;
+            *)
             COMPATIBLE="false"
-        fi
+            ;;
+        esac
 
     else
         COMPATIBLE="false"
@@ -171,21 +186,26 @@ get_network(){
 }
 
 choose_protocol(){
-    local CHOISE=0
-    local ARRAY=("tcp" "udp")
+    echo "Choose the protocol you want to use:"
+    echo "1) TCP"
+    echo "2) UDP (default)"
 
-    until [ "$CHOISE" -eq 1 ] || [ "$CHOISE" -eq 2 ]; do
-        echo "Choose the protocol you want to use:"
-        echo "1) TCP"
-        echo "2) UDP (default)"
+    local CHOISE
+    while true; do
         read -r -p "--> " CHOISE
-
-        if [ -z "$CHOISE" ]; then
-            PROTO="${ARRAY[1]}"
-            CHOISE=1
-        else
-            PROTO="${ARRAY[(($CHOISE-1))]}"
-        fi
+        case "$CHOISE" in
+            1)
+            PROTO="tcp"
+            break
+            ;;
+            2 | "")
+            PROTO="udp"
+            break
+            ;;
+            *)
+            echo "Invalid choise"
+            ;;
+        esac
     done
     
     echo "PROTO=\"$PROTO\"" >> /etc/.install_settings
@@ -194,10 +214,10 @@ choose_protocol(){
 input_port(){
     while true; do
         read -r -e -p "Input the port you want to use: " -i 1194 PORT
-        if [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
-            echo "Port must be between 1 and 65535"
-        else
+        if [[ "$PORT" =~ ^[0-9]+$ ]] && [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ]; then
             break
+        else
+            echo "Port must be between 1 and 65535"
         fi
     done
     
@@ -215,133 +235,167 @@ validate_ip(){
         IFS='.' # Set a new IFS.
         IP=($IP) # Save the value as an array.
         IFS=$OIFS # Restore the IFS.
-        [ "${IP[0]}" -le 255 ] && [ "${IP[1]}" -le 255 ] && [ "${IP[2]}" -le 255 ] && [ "${IP[3]}" -le 255 ] # Check whether the 4 octects are less or equal to 255.
+        # Check whether the 4 octects are less or equal to 255.
+        [ "${IP[0]}" -le 255 ] && [ "${IP[1]}" -le 255 ] && [ "${IP[2]}" -le 255 ] && [ "${IP[3]}" -le 255 ]
         STAT=$? # Will be 0 on success.
     fi
     echo "$STAT"
 }
 
 choose_dns(){
-    local CHOISE=0
-    
-    # Get system resolvers from /etc/resolv/conf. This should be improved to validate IP address and
-    # also recognize 127.0.0.0/8 on systems that use dnsmasq for caching (like Ubuntu).
-    local LOCAL_DNS=($(grep nameserver /etc/resolv.conf | awk '{print $2}'))
-    local ARRAY=("$LOCAL_DNS" "8.8.8.8 8.8.4.4" "208.67.222.222 208.67.220.220" "9.9.9.9 149.112.112.112" "1.1.1.1 1.0.0.1")
+    # Get system resolvers from /etc/resolv.conf. On Ubuntu systems, it would give some loopback address,
+    # so if nmcli is available, we use it to grab the upstream DNS instead.
+    local LOCAL_DNS
+    if hash nmcli 2> /dev/null; then
+        LOCAL_DNS="$(nmcli dev show | grep DNS)"
+    else
+        LOCAL_DNS="$(grep nameserver /etc/resolv.conf)"
+    fi
+    LOCAL_DNS=($(grep -oE '[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}' <<< "$LOCAL_DNS" | grep -vE '127.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}'))
 
+    local ARRAY=("8.8.8.8 8.8.4.4" "208.67.222.222 208.67.220.220" "9.9.9.9 149.112.112.112" "1.1.1.1 1.0.0.1")
+
+    local COUNTER=0
+
+    # Only allow local dns if we found some
     echo "Choose the DNS you want to use:"
-    echo "1) Current ($LOCAL_DNS)"
-    echo "2) Google"
-    echo "3) OpenDNS"
-    echo "4) Quad9"
-    echo "5) Cloudflare"
-    echo "6) Custom"
+    if [ "${#LOCAL_DNS[@]}" -ne 0 ]; then
+        ARRAY=("${LOCAL_DNS[*]}" "${ARRAY[@]}")
+        echo "$((++COUNTER))) Current system DNS(${LOCAL_DNS[*]})"
+    fi
+    echo "$((++COUNTER))) Google"
+    echo "$((++COUNTER))) OpenDNS"
+    echo "$((++COUNTER))) Quad9"
+    echo "$((++COUNTER))) Cloudflare"
+    echo "$((++COUNTER))) Custom"
 
-    until [ "$CHOISE" -ge 1 ] && [ "$CHOISE" -le 6 ]; do
+    local CHOISE
+    while true; do
         read -r -p "--> " CHOISE
-
         if [ -z "$CHOISE" ]; then
             echo "You haven't chosen any option"
-            CHOISE=0
-        else
-            if [ "$CHOISE" -eq 6 ]; then
-                local RET1=1
-                local RET2=1
+        elif [[ "$CHOISE" =~ ^[0-9]+$ ]] && [ "$CHOISE" -ge 1 ] && [ "$CHOISE" -le "$COUNTER" ]; then
+
+            if [ "$CHOISE" -eq "$COUNTER" ]; then
+                local RET1
+                local RET2
 
                 while true; do
-                    until [ -n "$DNS" ]; do
-                        read -r -p "Input the DNS (max. 2) separated by a space: " DNS
+                    read -r -p "Input the DNS (max. 2) separated by a space: " DNS
 
-                        if [ -z "$DNS" ]; then
-                            echo "You haven't provided any DNS"
+                    if [ -n "$DNS" ]; then
+                        local DNS1="$(awk '{print $1}' <<< "$DNS")"
+                        local DNS2="$(awk '{print $2}' <<< "$DNS")"
+                        RET1=$(validate_ip "$DNS1")
+
+                        if [ -z "$DNS2" ]; then
+                            RET2=0
+                        else
+                            RET2="$(validate_ip "$DNS2")"
                         fi
-                    done
 
-                    local DNS1="$(awk '{print $1}' <<< "$DNS")"
-                    local DNS2="$(awk '{print $2}' <<< "$DNS")"
-                    RET1=$(validate_ip "$DNS1")
-
-                    if [ -z "$DNS2" ]; then
-                        RET2=0
+                        if [ "$RET1" -eq 0 ] && [ "$RET2" -eq 0 ]; then
+                            break
+                        else
+                            echo "Invalid IP addresses"
+                        fi     
                     else
-                        RET2="$(validate_ip "$DNS2")"
-                    fi
-
-                    if [ "$RET1" -ne 0 ] || [ "$RET2" -ne 0 ]; then
-                        echo "Invalid IP addresses"
-                        DNS=""
-                    else
-                        break
+                        echo "You haven't provided any DNS"
                     fi
                 done
             else
                 DNS="${ARRAY[(($CHOISE-1))]}"
             fi
+
+            break
+        else
+            echo "Invalid choise"
         fi
     done
 }
 
 choose_remote(){
-    local CHOISE=0
     echo "Do you want to connect via a public IP or a domain name?"
     echo "1) IP address ($PUBLIC_IP)"
     echo "2) Domain name"
 
-    until [ "$CHOISE" -eq 1 ] || [ "$CHOISE" -eq 2 ]; do
+    local CHOISE
+    while true; do
         read -r -p "--> " CHOISE
+        case "$CHOISE" in
+            1)
+            REMOTE="$PUBLIC_IP"
+            break
+            ;;
+            2)
+            until [ -n "$REMOTE" ]; do
+                read -r -p "Provide the domain name you want to use: " REMOTE
 
-        if [ -z "$CHOISE" ]; then
+                if [ -z "$REMOTE" ]; then
+                    echo "You haven't provided any domain"
+                fi
+            done
+            break
+            ;;
+            "")
             echo "You haven't chosen any option"
-            CHOISE=0
-        else
-            if [ "$CHOISE" -eq 1 ]; then
-                REMOTE="$PUBLIC_IP"
-            else
-                until [ -n "$REMOTE" ]; do
-                    read -r -p "Provide the domain name you want to use: " REMOTE
-
-                    if [ -z "$REMOTE" ]; then
-                        echo "You haven't provided any domain"
-                    fi
-                done
-            fi
-        fi
+            ;;
+            *)
+            echo "Invalid choise"
+            ;;
+        esac
     done
 }
 
 choose_compression(){
-    local CHOISE=0
-    local ARRAY=("none" "comp-lzo")
-
     if [ "$LEGACY" = "true" ]; then
-        until [ "$CHOISE" -ge 1 ] && [ "$CHOISE" -le 2 ]; do
-            echo "Choose the compression type you want to use:"
-            echo "1) None (default)"
-            echo "2) LZO"
-            read -r -p "--> " CHOISE
+        echo "Choose the compression type you want to use:"
+        echo "1) None (default)"
+        echo "2) LZO"
 
-            if [ -z "$CHOISE" ]; then
-                COMP="${ARRAY[0]}"
-                CHOISE=1
-            else
-                COMP="${ARRAY[(($CHOISE-1))]}"
-            fi
+        local CHOISE
+        while true; do
+            read -r -p "--> " CHOISE
+            case "$CHOISE" in
+                1 | "")
+                COMP="none"
+                break
+                ;;
+                2)
+                COMP="comp-lzo"
+                break
+                ;;
+                *)
+                echo "Invalid choise"
+                ;;
+            esac
         done
     else
-        ARRAY+=("compress lz4")
-        until [ "$CHOISE" -ge 1 ] && [ "$CHOISE" -le 3 ]; do
-            echo "Choose the compression type you want to use:"
-            echo "1) None (default)"
-            echo "2) LZO (OpenVPN 2.3 compatible)"
-            echo "3) LZ4"
-            read -r -p "--> " CHOISE
+        echo "Choose the compression type you want to use:"
+        echo "1) None (default)"
+        echo "2) LZO (OpenVPN 2.3 compatible)"
+        echo "3) LZ4"
 
-            if [ -z "$CHOISE" ]; then
-                COMP="${ARRAY[0]}"
-                CHOISE=1
-            else
-                COMP="${ARRAY[(($CHOISE-1))]}"
-            fi
+        local CHOISE
+        while true; do
+            read -r -p "--> " CHOISE
+            case "$CHOISE" in
+                1 | "")
+                COMP="none"
+                break
+                ;;
+                2)
+                COMP="comp-lzo"
+                break
+                ;;
+                3)
+                COMP="compress lz4"
+                break
+                ;;
+                *)
+                echo "Invalid choise"
+                ;;
+            esac
         done
     fi
 }
@@ -351,108 +405,149 @@ choose_cert_type(){
         choose_rsa_size
         CERT="RSA"
     else
-        local CHOISE=0
+        echo "Do you want to generate RSA or ECDSA certificates?"
+        echo "1) RSA (OpenVPN 2.3 compatible)"
+        echo "2) ECDSA (default)"
 
-        until [ "$CHOISE" -eq 1 ] || [ "$CHOISE" -eq 2 ]; do
-            echo "Do you want to generate RSA or ECDSA certificates?"
-            echo "1) RSA (OpenVPN 2.3 compatible)"
-            echo "2) ECDSA (default)"
+        local CHOISE
+        while true; do
             read -r -p "--> " CHOISE
-
-            if [ -z "$CHOISE" ] || [ "$CHOISE" -eq 2 ]; then
-                choose_ecdsa_size
-                CERT="ECDSA"
-                CHOISE=1
-            elif [ "$CHOISE" -eq 1 ]; then
+            case "$CHOISE" in
+                1)
                 choose_rsa_size
                 CERT="RSA"
-            fi
+                break
+                ;;
+                2 | "")
+                choose_ecdsa_size
+                CERT="ECDSA"
+                break
+                ;;
+                *)
+                echo "Invalid choise"
+                ;;
+            esac
         done
     fi
 }
 
 choose_rsa_size(){
-    local CHOISE=0
-    local ARRAY=("2048" "3072" "4096")
+    echo "Choose the certificate size:"
+    echo "1) 2048 bit (default)"
+    echo "2) 3072 bit"
+    echo "3) 4096 bit"
 
-    until [ "$CHOISE" -ge 1 ] && [ "$CHOISE" -le 3 ]; do
-        echo "Choose the certificate size:"
-        echo "1) 2048 bit (default)"
-        echo "2) 3072 bit"
-        echo "3) 4096 bit"
+    local CHOISE
+    while true; do
         read -r -p "--> " CHOISE
-
-        if [ -z "$CHOISE" ]; then
-            RSA="${ARRAY[0]}"
-            CHOISE=1
-        else
-            RSA="${ARRAY[(($CHOISE-1))]}"
-        fi
+        case "$CHOISE" in
+            1 | "")
+            RSA="2048"
+            break
+            ;;
+            2)
+            RSA="3072"
+            break
+            ;;
+            3)
+            RSA="4096"
+            break
+            ;;
+            *)
+            echo "Invalid choise"
+            ;;
+        esac
     done
 }
 
 choose_ecdsa_size(){
-    local CHOISE=0
-    local ARRAY=("prime256v1" "secp384r1" "secp521r1")
+    echo "Choose the certificate size:"
+    echo "1) 256 bit (default)"
+    echo "2) 384 bit"
+    echo "3) 521 bit"
 
-    until [ "$CHOISE" -ge 1 ] && [ "$CHOISE" -le 3 ]; do
-        echo "Choose the certificate size:"
-        echo "1) 256 bit (default)"
-        echo "2) 384 bit"
-        echo "3) 521 bit"
+    local CHOISE
+    while true; do
         read -r -p "--> " CHOISE
-
-        if [ -z "$CHOISE" ]; then
-            ECDSA="${ARRAY[0]}"
-            CHOISE=1
-        else
-            ECDSA="${ARRAY[(($CHOISE-1))]}"
-        fi
+        case "$CHOISE" in
+            1 | "")
+            ECDSA="prime256v1"
+            break
+            ;;
+            2)
+            ECDSA="secp384r1"
+            break
+            ;;
+            3)
+            ECDSA="secp521r1"
+            break
+            ;;
+            *)
+            echo "Invalid choise"
+            ;;
+        esac
     done
 }
 
 choose_key_size(){
-    local CHOISE=0
-    
-    # Actually GCM mode is more secure but it requires OpenVPN 2.4, so we should use a prompt for
-    # legacy servers and another for new servers. However, specifying CBC only (instead of both),
-    # makes a smaller function and 2.4 clients will be upgraded to GCM mode anyways because of their
+    echo "Choose the key size:"
+    echo "1) 128 bit (default)"
+    echo "2) 192 bit"
+    echo "3) 256 bit"
+
+    # AES-GCM is more secure but it requires OpenVPN 2.4, so we should use a prompt for legacy
+    # servers and another for new servers. However, specifying CBC only (instead of both), makes
+    # a smaller function and 2.4 clients will be upgraded to GCM mode anyways because of their
     # "negotiable crypto parameters" feature.
-    local ARRAY=("AES-128-CBC" "AES-192-CBC" "AES-256-CBC")
-
-    until [ "$CHOISE" -ge 1 ] && [ "$CHOISE" -le 3 ]; do
-        echo "Choose the key size:"
-        echo "1) 128 bit (default)"
-        echo "2) 192 bit"
-        echo "3) 256 bit"
+    local CHOISE
+    while true; do
         read -r -p "--> " CHOISE
-
-        if [ -z "$CHOISE" ]; then
-            KEY="${ARRAY[0]}"
-            CHOISE=1
-        else
-            KEY="${ARRAY[(($CHOISE-1))]}"
-        fi
+        case "$CHOISE" in
+            1 | "")
+            KEY="AES-128-CBC"
+            break
+            ;;
+            2)
+            KEY="AES-192-CBC"
+            break
+            ;;
+            3)
+            KEY="AES-256-CBC"
+            break
+            ;;
+            *)
+            echo "Invalid choise"
+            ;;
+        esac
     done
 }
 
 choose_hash_size(){
-    local CHOISE=0
-    local ARRAY=("SHA256" "SHA384" "SHA512")
+    echo "Choose the hash size:"
+    echo "1) 256 bit (default)"
+    echo "2) 384 bit"
+    echo "3) 512 bit"
 
-    until [ "$CHOISE" -ge 1 ] && [ "$CHOISE" -le 3 ]; do
-        echo "Choose the hash size:"
-        echo "1) 256 bit (default)"
-        echo "2) 384 bit"
-        echo "3) 512 bit"
+    local CHOISE
+    while true; do
         read -r -p "--> " CHOISE
-
-        if [ -z "$CHOISE" ]; then
-            HASH="${ARRAY[0]}"
-            CHOISE=1
-        else
-            HASH="${ARRAY[(($CHOISE-1))]}"
-        fi
+        case "$CHOISE" in
+            1 | "")
+            HASH="SHA256"
+            break
+            ;;
+            2)
+            HASH="SHA384"
+            break
+            ;;
+            3)
+            HASH="SHA512"
+            break
+            ;;
+            *)
+            echo "Invalid choise"
+            ;;
+        esac
     done
 }
 
@@ -460,24 +555,29 @@ choose_tls_protection(){
     if [ "$LEGACY" = "true" ]; then
         TLS_PROT="tls-auth"
     else
-        local CHOISE=0
-        local ARRAY=("tls-crypt" "tls-auth")
+        echo "Choose the control channel protection type:"
+        echo "1) Encrypt and authenticate (default)"
+        echo "2) Authenticate (OpenVPN 2.3 compatible)"
 
-        until [ "$CHOISE" -eq 1 ] || [ "$CHOISE" -eq 2 ]; do
-            echo "Choose the control channel protection type:"
-            echo "1) Encrypt and authenticate (default)"
-            echo "2) Authenticate (OpenVPN 2.3 compatible)"
+        local CHOISE
+        while true; do
             read -r -p "--> " CHOISE
-
-            if [ -z "$CHOISE" ]; then
-                TLS_PROT="${ARRAY[0]}"
-                CHOISE=1
-            else
-                TLS_PROT="${ARRAY[(($CHOISE-1))]}"
-            fi
+            case "$CHOISE" in
+                1 | "")
+                TLS_PROT="tls-crypt"
+                break
+                ;;
+                2)
+                TLS_PROT="tls-auth"
+                break
+                ;;
+                *)
+                echo "Invalid choise"
+                ;;
+            esac
         done
     fi
-    
+
     echo "TLS_PROT=\"$TLS_PROT\"" >> /etc/.install_settings
 }
 
@@ -626,7 +726,6 @@ configure_firewall(){
 }
 
 configure_logging(){
-
     # I just copied another daemon config here.
     echo "if \$programname == 'ovpn-server' then /var/log/openvpn.log
 if \$programname == 'ovpn-server' then ~" > /etc/rsyslog.d/30-openvpn.conf
@@ -644,11 +743,13 @@ if \$programname == 'ovpn-server' then ~" > /etc/rsyslog.d/30-openvpn.conf
         invoke-rc.d rsyslog rotate >/dev/null 2>&1 || true
     endscript
 }" > /etc/logrotate.d/openvpn
-    service rsyslog restart
 }
 
 create_pki(){
     cd /etc/openvpn
+    if [ -d easy-rsa ]; then
+        rm -rf easy-rsa
+    fi
     wget https://github.com/OpenVPN/easy-rsa/releases/download/v3.0.4/EasyRSA-3.0.4.tgz
     tar xzf EasyRSA-3.0.4.tgz
     mv EasyRSA-3.0.4 easy-rsa
@@ -755,8 +856,6 @@ verb 3" >> server.conf
     if [ -n "$DNS2" ]; then
         echo "push \"dhcp-option DNS $DNS2\"" >> server.conf
     fi
-    
-    service openvpn restart
 }
 
 create_client_template(){
@@ -782,6 +881,18 @@ verb 3" >> template.txt
 
     if [ "$TLS_PROT" = "tls-auth" ]; then
         echo "key-direction 1" >> template.txt
+    fi
+}
+
+start_services(){
+    if hash systemctl 2> /dev/null; then
+        systemctl enable openvpn
+        systemctl start openvpn
+        systemctl restart rsyslog
+        echo
+    else
+        service openvpn start
+        service rsyslog restart
     fi
 }
 
@@ -837,24 +948,19 @@ create_client(){
     fi
 
     while true; do
-        while true; do
-            read -r -p "Input a name for the client: " CLIENT_NAME
-            if [ -z "$CLIENT_NAME" ]; then
-                echo "You haven't provided any name"
+        read -r -p "Input a name for the client: " CLIENT_NAME
+        if [ -z "$CLIENT_NAME" ]; then
+            echo "You haven't provided any name"
+        else
+            if [ -f "pki/ovpns/$CLIENT_NAME.ovpn" ]; then
+                echo "A client with this name already exists"
             else
-
-                # Enforcing alphanumeric characters makes easy to parse names later.
                 if [[ "$CLIENT_NAME" =~ [^a-zA-Z0-9] ]]; then
                     echo "You can only use alphanumeric characters"
                 else
                     break
                 fi
             fi
-        done
-        if [ -f "pki/ovpns/$CLIENT_NAME.ovpn" ]; then
-            echo "A client with this name already exists"
-        else
-            break
         fi
     done
     
@@ -862,49 +968,41 @@ create_client(){
         read -r -s -p "Input a password for the client (press enter not to use it): " PASSWD1
         echo
 
-        if [ ${#PASSWD1} -ge 4 ] && [ ${#PASSWD1} -le 1024 ] || [ ${#PASSWD1} -eq 0 ]; then
-            if [ -z "$PASSWD1" ]; then
-                USE_PASS="false"
-                break
-            else
-                USE_PASS="true"
-                read -r -s -p "Re-enter the password to confirm: " PASSWD2
-                echo
-                if [ "$PASSWD1" != "$PASSWD2" ]; then
-                    echo "Passwords do not match"
-                else
-                    break
+        if [ ${#PASSWD1} -ge 4 ] && [ ${#PASSWD1} -le 1024 ]; then
+
+            read -r -s -p "Re-enter the password to confirm: " PASSWD2
+            echo
+            if [ "$PASSWD1" = "$PASSWD2" ]; then
+
+                # Non alphanumeric characters must be escaped otherwhise expect will complain.
+                PASSWD1="$(echo -n "$PASSWD1" | sed 's/[^a-zA-Z0-9]/\\&/g')"
+                expect -c "set timeout -1
+                spawn ./easyrsa build-client-full \"$CLIENT_NAME\"
+                expect \"Enter PEM pass phrase:\" { sleep 0.1; send -- \"$PASSWD1\r\" }
+                expect \"Verifying - Enter PEM pass phrase:\" { sleep 0.1; send -- \"$PASSWD1\r\" }
+                expect eof"
+                if [ $? -ne 0 ]; then
+                    echo "An error has occured during the creation of the client configuration"
+                    exit 1
                 fi
+                break
+
+            else
+                echo "Passwords do not match"
             fi
+
+        elif [ -z "$PASSWD1" ]; then
+
+            if ! ./easyrsa build-client-full "$CLIENT_NAME" nopass; then
+                echo "An error has occured during the creation of the client configuration"
+                exit 1
+            fi
+            break
+
         else
             echo "Password must be between 4 and 1024 characters"
         fi
     done
-    
-    # Non alphanumeric characters must be escaped otherwhise expect will complain.
-    PASSWD1="$(echo -n "$PASSWD1" | sed 's/[^a-zA-Z0-9]/\\&/g')"
-
-    if [ "$USE_PASS" = "true" ]; then
-        expect << EOF
-        set timeout -1
-        spawn ./easyrsa build-client-full "$CLIENT_NAME"
-
-        # A 0.1 seconds delay prevents the password from showing on the screen. The two dashes
-        # keep expect from parsing passwords starting with '-' as commands.
-        expect "Enter PEM pass phrase:" { sleep 0.1; send -- "$PASSWD1\r" }
-        expect "Verifying - Enter PEM pass phrase:" { sleep 0.1; send -- "$PASSWD1\r" }
-        expect eof
-EOF
-        if [ $? -ne 0 ]; then
-            echo "An error has occured during the creation of the client configuration"
-            exit 1
-        fi
-    else
-        if ! ./easyrsa build-client-full "$CLIENT_NAME" nopass; then
-            echo "An error has occured during the creation of the client configuration"
-            exit 1
-        fi
-    fi
     
     cd pki
     {
@@ -943,7 +1041,7 @@ revoke_client(){
     source /etc/.install_settings
 
     cd /etc/openvpn/easy-rsa
-    local VALID=($(grep '^V' pki/index.txt | awk -F '/CN=' '{print $2}' | tail +2))
+    local VALID=($(grep '^V' pki/index.txt | awk -F '/CN=' '{print $2}' | tail -n +2))
 
     if [ ${#VALID[@]} -eq 0 ]; then
         echo "There are no clients to revoke"
@@ -957,20 +1055,15 @@ revoke_client(){
         ((COUNTER++))
     done
 
-    local CHOISE=0
+    local CHOISE
     while true; do
         read -r -p "--> " CHOISE
 
         if [ -z "$CHOISE" ]; then
             echo "You haven't chosen any client"
-            CHOISE=0
         else
-            if [ "$CHOISE" -lt 1 ] || [ "$CHOISE" -gt ${#VALID[@]} ]; then
-                echo "Invalid choise"
-            else
+            if [[ "$CHOISE" =~ ^[0-9]+$ ]] && [ "$CHOISE" -ge 1 ] && [ "$CHOISE" -le ${#VALID[@]} ]; then
                 local CLIENT_NAME="${VALID[(($CHOISE-1))]}"
-                
-                # This checksum will be used later inside this function.
                 REQUESTED="$(sha256sum "pki/ovpns/$CLIENT_NAME.ovpn" | cut -c 1-64)"
                 read -r -p "Do you really want to revoke $CLIENT_NAME? [Y/n] "
 
@@ -1011,6 +1104,8 @@ revoke_client(){
                 else
                     exit 1
                 fi
+            else
+                echo "Invalid choise"
             fi
         fi
     done
@@ -1026,10 +1121,14 @@ uninstall_server(){
     read -r -p "Proceed with the server uninstallation? [Y/n] "
     
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        service openvpn stop
+        if hash systemctl 2> /dev/null; then
+            systemctl stop openvpn
+        else
+            service openvpn stop
+        fi
 
         cd /etc/openvpn/easy-rsa/pki
-        local VALID=($(grep '^V' index.txt | awk -F '/CN=' '{print $2}' | tail +2))
+        local VALID=($(grep '^V' index.txt | awk -F '/CN=' '{print $2}' | tail -n +2))
 
         # Find and delete all valid client configs in the home folder of the user.
         for CLIENT_NAME in "${VALID[@]}"; do
