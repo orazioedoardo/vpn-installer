@@ -1,6 +1,6 @@
 # VPN installer
 
-This script will walk you through the installation of an OpenVPN server. It begins asking basic questions like the protocol, the port, DNS and the kind of encryption you want to use. Then it will automatically download necessary packages, configure the firewall and the server itself. The default settings are secure enough, so if you are not sure you can just press enter and let the script proceed. After the installation, you can use the same script to generate, list or revoke clients.
+This script will walk you through the installation of an OpenVPN server. It begins asking basic questions like the protocol, the port, DNS and the kind of encryption you want to use. Then it will automatically download necessary packages, configure the firewall and the server itself. If you are not sure about the settings, you can use the default ones, which are secure enough. Additionally, you can choose not to use the latest OpenVPN features (ECDSA, control channel encryption and LZ4 compressions) if you need compatibiliy with older clients. After the installation, you can use the same script to generate, list or revoke clients.
 
 # Why?
 By default, the server is set up to redirect all your internet traffic through the VPN tunnel. Therefore, you can use it to securely connect to machines inside your home network, browse the web when your smartphone is connected to a public wifi without risk of eavesdropping or bypass network restrictions (DNS filtering, IP blocking, ecc.).
@@ -42,7 +42,7 @@ Watch out! If your certificate is stolen, anyone will be able to use it to conne
 
 ![Client creation](/png/3.png)
 
-# Client revoking
+# Revoking clients
 If you revoke a client you will be able to create a new client with the same name as the revoked one.
 
 ![Client revoking](/png/4.png)
