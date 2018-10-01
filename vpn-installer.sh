@@ -44,18 +44,16 @@ install_server(){
     rm -rf /etc/.install_settings
 
     # We use those variables to determine where to store .ovpn files and apply proper permissions.
-    if [ -z "$SUDO_USER" ]; then
-        HOME_DIR="$(getent passwd "$USER" | cut -d ':' -f 6)"
-        CURRENT_USER="$USER"
-    else
-        HOME_DIR="$(getent passwd "$SUDO_USER" | cut -d ':' -f 6)"
+    if [ -n "$SUDO_USER" ]; then
         CURRENT_USER="$SUDO_USER"
+    else
+        CURRENT_USER="$USER"
     fi
+    HOME_DIR="$(getent passwd "$CURRENT_USER" | cut -d ':' -f 6)"
 
     echo "HOME_DIR=\"$HOME_DIR\"" >> /etc/.install_settings
     echo "CURRENT_USER=\"$CURRENT_USER\"" >> /etc/.install_settings
 
-    # Wget is required to get the public IP (the best way to do it would be to use dig but it's not
     # preinstalled on Ubuntu and Debian and we don't want to install a package even if the user
     # does not proceed with the installation).
     if ! hash wget 2> /dev/null; then
@@ -69,15 +67,44 @@ install_server(){
     input_port
     choose_dns
     choose_remote
-    choose_compression
-    choose_cert_type    
-    choose_key_size
-    choose_hash_size
-    choose_tls_protection
+
+    read -r -p "Default settings provide 128-bit security, do you want to customize them? [y/N] "
+
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        choose_compression
+        choose_cert_type
+        choose_key_size
+        choose_hash_size
+        choose_tls_protection
+    else
+        COMP="none"
+        KEY="AES-128-CBC"
+        HASH="SHA256"
+
+        if [ "$LEGACY" = "true" ]; then       
+            CERT="RSA"
+            RSA="3072"
+            TLS_PROT="tls-auth"
+        else
+            read -r -p "Keep compatibility with OpenVPN 2.3? [y/N] "
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                CERT="RSA"
+                RSA="3072"
+                TLS_PROT="tls-auth"
+            else
+                CERT="ECDSA"
+                ECDSA="prime256v1"
+                TLS_PROT="tls-crypt"
+            fi
+        fi
+
+        echo "TLS_PROT=\"$TLS_PROT\"" >> /etc/.install_settings
+    fi
+
     show_summary
 
     read -r -p "Proceed with the server installation? [Y/n] "
-    
+
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         install_packages
         configure_firewall
@@ -89,7 +116,7 @@ install_server(){
         
         echo -e "Installation has been completed, run the script again to create a configuration file for a client\n"
         read -r -p "It is recommended to reboot after installation, reboot now? [Y/n] "
-        
+
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             reboot
         fi
@@ -433,19 +460,19 @@ choose_cert_type(){
 
 choose_rsa_size(){
     echo "Choose the certificate size:"
-    echo "1) 2048 bit (default)"
-    echo "2) 3072 bit"
+    echo "1) 2048 bit"
+    echo "2) 3072 bit (default)"
     echo "3) 4096 bit"
 
     local CHOISE
     while true; do
         read -r -p "--> " CHOISE
         case "$CHOISE" in
-            1 | "")
+            1)
             RSA="2048"
             break
             ;;
-            2)
+            2 | "")
             RSA="3072"
             break
             ;;
@@ -582,7 +609,7 @@ choose_tls_protection(){
 }
 
 show_summary(){
-    echo "Settings summary:"
+    echo -e "\nSettings summary:"
     echo "- Network interface $IFACE"
     
     if [ "$REMOTE" = "$PUBLIC_IP" ]; then
@@ -606,7 +633,7 @@ show_summary(){
 
     if [ "$COMP" != "none" ]; then
         if [ "$COMP" = "comp-lzo" ]; then
-            echo "- LZO commpresssion"
+            echo "- LZO compresssion"
         elif [ "$COMP" = "compress lz4" ]; then
             echo "- LZ4 compression"
         fi
