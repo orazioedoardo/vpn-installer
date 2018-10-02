@@ -288,7 +288,7 @@ choose_dns(){
     echo "Choose the DNS you want to use:"
     if [ "${#LOCAL_DNS[@]}" -ne 0 ]; then
         ARRAY=("${LOCAL_DNS[*]}" "${ARRAY[@]}")
-        echo "$((++COUNTER))) Current system DNS(${LOCAL_DNS[*]})"
+        echo "$((++COUNTER))) Current system DNS (${LOCAL_DNS[*]})"
     fi
     echo "$((++COUNTER))) Google"
     echo "$((++COUNTER))) OpenDNS"
