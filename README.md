@@ -15,9 +15,9 @@ If your server is at home, it's probably behind a NAT, so you'll likely need to 
 # Installation
 
 ```
-wget https://raw.githubusercontent.com/orazioedoardo/vpn-installer/master/vpn-installer.sh
-chmod +x vpn-installer.sh
-sudo ./vpn-installer.sh
+wget https://raw.githubusercontent.com/orazioedoardo/vpn-installer/master/vpn.sh
+chmod +x vpn.sh
+sudo ./vpn.sh
 ```
 
 ### Available options:
