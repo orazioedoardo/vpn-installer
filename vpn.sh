@@ -198,13 +198,30 @@ check_distro(){
     fi
 }
 
+# Function from https://stackoverflow.com/a/13777424
+is_valid_ip(){
+    local IP="$1" # Get the first argument passed to the function.
+    local STAT=1 # Start with 1, so invalid.
+
+    # Specify the format (numbers from 0 to 9 with 1 to 3 digits).
+    if [[ "$IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then 
+        OIFS=$IFS # Save the IFS.
+        IFS='.' # Set a new IFS.
+        IP=($IP) # Save the value as an array.
+        IFS=$OIFS # Restore the IFS.
+        # Check whether the 4 octects are less or equal to 255.
+        [ "${IP[0]}" -le 255 ] && [ "${IP[1]}" -le 255 ] && [ "${IP[2]}" -le 255 ] && [ "${IP[3]}" -le 255 ]
+        STAT=$? # Will be 0 on success.
+    fi
+    return $STAT
+}
+
 get_network(){
     GW_IP="$(ip route get 8.8.8.8 | head -1 | awk '{print $3}')"
     IFACE="$(ip route get 8.8.8.8 | head -1 | awk '{print $5}')"
     IFACE_IP="$(ip route get 8.8.8.8 | head -1 | awk '{print $7}')"
 
-    PUBLIC_IP="$(wget -qO- http://whatismyip.akamai.com)"
-    if [ -z "$PUBLIC_IP" ]; then
+    if ! PUBLIC_IP="$(wget -qO- https://checkip.amazonaws.com)" || ! is_valid_ip "$PUBLIC_IP"; then
         echo "Unable to detect the public IP address"
         exit 1
     fi
@@ -251,24 +268,6 @@ input_port(){
     echo "PORT=\"$PORT\"" >> /etc/.install_settings
 }
 
-# Function from https://stackoverflow.com/a/13777424
-validate_ip(){
-    local IP="$1" # Get the first argument passed to the function.
-    local STAT=1 # Start with 1, so invalid.
-
-    # Specify the format (numbers from 0 to 9 with 1 to 3 digits).
-    if [[ "$IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then 
-        OIFS=$IFS # Save the IFS.
-        IFS='.' # Set a new IFS.
-        IP=($IP) # Save the value as an array.
-        IFS=$OIFS # Restore the IFS.
-        # Check whether the 4 octects are less or equal to 255.
-        [ "${IP[0]}" -le 255 ] && [ "${IP[1]}" -le 255 ] && [ "${IP[2]}" -le 255 ] && [ "${IP[3]}" -le 255 ]
-        STAT=$? # Will be 0 on success.
-    fi
-    echo "$STAT"
-}
-
 choose_dns(){
     # Get system resolvers from /etc/resolv.conf. On Ubuntu systems, it would give some loopback address,
     # so if nmcli is available, we use it to grab the upstream DNS instead.
@@ -313,12 +312,14 @@ choose_dns(){
                     if [ -n "$DNS" ]; then
                         local DNS1="$(awk '{print $1}' <<< "$DNS")"
                         local DNS2="$(awk '{print $2}' <<< "$DNS")"
-                        RET1=$(validate_ip "$DNS1")
+                        is_valid_ip "$DNS1"
+                        RET1=$?
 
                         if [ -z "$DNS2" ]; then
                             RET2=0
                         else
-                            RET2="$(validate_ip "$DNS2")"
+                            is_valid_ip "$DNS2"
+                            RET2=$?
                         fi
 
                         if [ "$RET1" -eq 0 ] && [ "$RET2" -eq 0 ]; then
@@ -755,7 +756,7 @@ configure_firewall(){
 configure_logging(){
     # I just copied another daemon config here.
     echo "if \$programname == 'ovpn-server' then /var/log/openvpn.log
-if \$programname == 'ovpn-server' then ~" > /etc/rsyslog.d/30-openvpn.conf
+if \$programname == 'ovpn-server' then stop" > /etc/rsyslog.d/30-openvpn.conf
 
     echo "/var/log/openvpn.log
 {
@@ -777,10 +778,10 @@ create_pki(){
     if [ -d easy-rsa ]; then
         rm -rf easy-rsa
     fi
-    wget https://github.com/OpenVPN/easy-rsa/releases/download/v3.0.4/EasyRSA-3.0.4.tgz
-    tar xzf EasyRSA-3.0.4.tgz
-    mv EasyRSA-3.0.4 easy-rsa
-    rm -rf EasyRSA-3.0.4.tgz
+    wget https://github.com/OpenVPN/easy-rsa/releases/download/v3.0.5/EasyRSA-nix-3.0.5.tgz
+    tar xzf EasyRSA-nix-3.0.5.tgz
+    mv EasyRSA-3.0.5 easy-rsa
+    rm -rf EasyRSA-nix-3.0.5.tgz
     chown root:root easy-rsa
 
     cd easy-rsa
@@ -794,7 +795,7 @@ create_pki(){
         echo "set_var EASYRSA_CURVE $ECDSA" >> vars
     fi
     echo "set_var EASYRSA_DIGEST $(awk '{print tolower($0)}' <<< "$HASH")" >> vars
-    echo "set_var EASYRSA_CRL_DAYS 3650" >> vars
+    echo "set_var EASYRSA_CRL_DAYS 1080" >> vars
 
     SERVER_NAME="server_$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 16 | head -1)"
     
