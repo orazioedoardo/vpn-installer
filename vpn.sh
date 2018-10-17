@@ -54,6 +54,7 @@ install_server(){
     echo "HOME_DIR=\"$HOME_DIR\"" >> /etc/.install_settings
     echo "CURRENT_USER=\"$CURRENT_USER\"" >> /etc/.install_settings
 
+    # Wget is required to get the public IP (the best way to do it would be to use dig but it's not
     # preinstalled on Ubuntu and Debian and we don't want to install a package even if the user
     # does not proceed with the installation).
     if ! hash wget 2> /dev/null; then
