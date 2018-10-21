@@ -26,7 +26,8 @@ sudo ./vpn.sh
 * Connect via public IP or domain name
 * No/LZO/LZ4 compression (default No, because of [possible attacks](https://www.mail-archive.com/openvpn-devel@lists.sourceforge.net/msg16919.html))
 * RSA/ECDSA certificates (default ECDSA, curve prime256v1)
-* AES-128-CBC, AES-192-CBC, AES-256-CBC encryption (default AES-128-CBC)
+* CBC/GCM as operation modes for the block cipher (default GCM)
+* AES-128, AES-192, AES-256 encryption (default AES-128)
 * SHA-256, SHA-384, SHA-512 digest (default SHA-256)
 * Control channel authentication/\[encryption + authentication\] (default the latter)
 
