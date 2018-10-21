@@ -5,7 +5,7 @@ if [ $EUID -ne 0 ]; then
     exit 1
 fi
 
-main() {
+main(){
     clear
     echo "Welcome to the OpenVPN server installation script"
     if [ -f /etc/openvpn/server.conf ]; then
@@ -74,25 +74,28 @@ install_server(){
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         choose_compression
         choose_cert_type
+        choose_block_cipher_operation_mode
         choose_key_size
         choose_hash_size
         choose_tls_protection
     else
         COMP="none"
-        KEY="AES-128-CBC"
         HASH="SHA256"
 
-        if [ "$LEGACY" = "true" ]; then       
+        if [ "$LEGACY" = "true" ]; then
+            KEY="AES-128-CBC"
             CERT="RSA"
             RSA="3072"
             TLS_PROT="tls-auth"
         else
             read -r -p "Keep compatibility with OpenVPN 2.3? [y/N] "
             if [[ $REPLY =~ ^[Yy]$ ]]; then
+                KEY="AES-128-CBC"
                 CERT="RSA"
                 RSA="3072"
                 TLS_PROT="tls-auth"
             else
+                KEY="AES-128-GCM"
                 CERT="ECDSA"
                 ECDSA="prime256v1"
                 TLS_PROT="tls-crypt"
@@ -114,7 +117,7 @@ install_server(){
         create_server_template
         create_client_template
         start_services
-        
+
         echo -e "Installation has been completed, run the script again to create a configuration file for a client\n"
         read -r -p "It is recommended to reboot after installation, reboot now? [Y/n] "
 
@@ -192,7 +195,7 @@ check_distro(){
     else
         COMPATIBLE="false"
     fi
-    
+
     if [ "$COMPATIBLE" = "false" ]; then
         echo "This system is not supported"
         exit 1
@@ -205,7 +208,7 @@ is_valid_ip(){
     local STAT=1 # Start with 1, so invalid.
 
     # Specify the format (numbers from 0 to 9 with 1 to 3 digits).
-    if [[ "$IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then 
+    if [[ "$IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
         OIFS=$IFS # Save the IFS.
         IFS='.' # Set a new IFS.
         IP=($IP) # Save the value as an array.
@@ -252,7 +255,7 @@ choose_protocol(){
             ;;
         esac
     done
-    
+
     echo "PROTO=\"$PROTO\"" >> /etc/.install_settings
 }
 
@@ -265,7 +268,7 @@ input_port(){
             echo "Port must be between 1 and 65535"
         fi
     done
-    
+
     echo "PORT=\"$PORT\"" >> /etc/.install_settings
 }
 
@@ -274,9 +277,9 @@ choose_dns(){
     # so if nmcli is available, we use it to grab the upstream DNS instead.
     local LOCAL_DNS
     if hash nmcli 2> /dev/null; then
-        LOCAL_DNS="$(nmcli dev show | grep DNS)"
+        LOCAL_DNS="$(nmcli dev show | grep 'DNS')"
     else
-        LOCAL_DNS="$(grep nameserver /etc/resolv.conf)"
+        LOCAL_DNS="$(grep 'nameserver' /etc/resolv.conf)"
     fi
     LOCAL_DNS=($(grep -oE '[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}' <<< "$LOCAL_DNS" | grep -vE '127.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}'))
 
@@ -327,7 +330,7 @@ choose_dns(){
                             break
                         else
                             echo "Invalid IP addresses"
-                        fi     
+                        fi
                     else
                         echo "You haven't provided any DNS"
                     fi
@@ -518,30 +521,50 @@ choose_ecdsa_size(){
     done
 }
 
+choose_block_cipher_operation_mode(){
+    echo "Do you want to use AES-CBC or AES-GCM for the symmetric key?"
+    echo "1) AES-CBC (OpenVPN 2.3 compatible)"
+    echo "2) AES-GCM (default)"
+
+    local CHOISE
+    while true; do
+        read -r -p "--> " CHOISE
+        case "$CHOISE" in
+            1)
+            OP_MODE="CBC"
+            break
+            ;;
+            2 | "")
+            OP_MODE="GCM"
+            break
+            ;;
+            *)
+            echo "Invalid choise"
+            ;;
+        esac
+    done
+}
+
 choose_key_size(){
     echo "Choose the key size:"
     echo "1) 128 bit (default)"
     echo "2) 192 bit"
     echo "3) 256 bit"
 
-    # AES-GCM is more secure but it requires OpenVPN 2.4, so we should use a prompt for legacy
-    # servers and another for new servers. However, specifying CBC only (instead of both), makes
-    # a smaller function and 2.4 clients will be upgraded to GCM mode anyways because of their
-    # "negotiable crypto parameters" feature.
     local CHOISE
     while true; do
         read -r -p "--> " CHOISE
         case "$CHOISE" in
             1 | "")
-            KEY="AES-128-CBC"
+            KEY="AES-128-$OP_MODE"
             break
             ;;
             2)
-            KEY="AES-192-CBC"
+            KEY="AES-192-$OP_MODE"
             break
             ;;
             3)
-            KEY="AES-256-CBC"
+            KEY="AES-256-$OP_MODE"
             break
             ;;
             *)
@@ -613,23 +636,23 @@ choose_tls_protection(){
 show_summary(){
     echo -e "\nSettings summary:"
     echo "- Network interface $IFACE"
-    
+
     if [ "$REMOTE" = "$PUBLIC_IP" ]; then
         echo "- IP address $PUBLIC_IP"
     else
         echo "- Domain name $REMOTE"
     fi
-    
+
     echo "- Protocol $(awk '{print toupper($0)}' <<< "$PROTO")"
     echo "- Port $PORT"
     echo "- DNS server $DNS"
-    
+
     if [ "$CERT" = "RSA" ]; then
         echo "- RSA certificate $RSA bit"
     elif [ "$CERT" = "ECDSA" ]; then
         echo "- ECDSA certificate $ECDSA"
     fi
-    
+
     echo "- Symmetric key $KEY"
     echo "- Hash function $HASH"
 
@@ -667,7 +690,7 @@ install_packages(){
 
     # Ufw will be used only if it is installed and active, since sometimes is preinstalled but not
     # actually used.
-    if is_installed "ufw" && LANG="en_US.UTF-8" ufw status | grep -qw active; then
+    if is_installed "ufw" && LANG="en_US.UTF-8" ufw status | grep -qw 'active'; then
         USE_UFW="true"
     fi
 
@@ -691,7 +714,7 @@ install_packages(){
 
     apt-get update
     apt-get install -y --no-install-recommends "${TO_INSTALL[@]}"
-    
+
     echo "USE_UFW=\"$USE_UFW\"" >> /etc/.install_settings
     echo "TO_INSTALL=\"${TO_INSTALL[*]}\"" >> /etc/.install_settings
 }
@@ -709,19 +732,19 @@ configure_firewall(){
     local FORWARD_CHAIN_EDITED="false"
 
     if [ "$USE_UFW" = "true" ]; then
-        
+
         # If ufw is active, by default it has policy DROP both on INPUT as well as FORWARD,
         # so we need to allow connections to the port and explicitly forward packets.
         ufw insert 1 allow "$PORT"/"$PROTO"
         ufw route insert 1 allow in on tun0 from 10.8.0.0/24 out on "$IFACE" to any
-        
+
         # There is no front-end commmand to perform masquerading, so we need to edit the rules file.
         sed "/delete these required/i *nat\n:POSTROUTING ACCEPT [0:0]\n-I POSTROUTING -s 10.8.0.0/24 -o $IFACE -j MASQUERADE\nCOMMIT\n" -i /etc/ufw/before.rules
         ufw reload
     else
         # Now some checks to detect which rules we need to add. On a newly installed system all policies
         # should be ACCEPT, so the only required rule would be the MASQUERADE one.
-        
+
         # Count how many rules are in the INPUT and FORWARD chain. When parsing input from
         # iptables -S, '^-P' skips the policies and 'ufw-' skips ufw chains (in case ufw was found
         # installed but not enabled).
@@ -799,7 +822,7 @@ create_pki(){
     echo "set_var EASYRSA_CRL_DAYS 1080" >> vars
 
     SERVER_NAME="server_$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 16 | head -1)"
-    
+
     if ! ./easyrsa --batch init-pki; then
         echo "An error has occured while initializing the PKI"
         exit 1
@@ -809,17 +832,17 @@ create_pki(){
         echo "An error has occured while creating the CA"
         exit 1
     fi
-    
+
     if ! ./easyrsa build-server-full "$SERVER_NAME" nopass; then
         echo "An error has occured while creating the server certificates"
         exit 1
     fi
-    
+
     if ! ./easyrsa gen-crl; then
         echo "An error has occured while generating the CRL"
         exit 1
     fi
-    
+
     cp pki/crl.pem /etc/openvpn/crl.pem
     chown nobody:nogroup /etc/openvpn/crl.pem
 
@@ -862,6 +885,12 @@ status /var/log/openvpn-status.log 20
 status-version 3
 syslog
 verb 3" >> server.conf
+
+    # We need to set the specific cipher otherwhise 2.4 peers will not honor the key size and just
+    # negotiate AES-256-GCM.
+    if grep -q 'GCM' <<< "$KEY"; then
+        echo "ncp-ciphers $KEY" >> server.conf
+    fi
 
     if [ "$CERT" = "RSA" ]; then
         echo "dh /etc/openvpn/easy-rsa/pki/dh.pem" >> server.conf
@@ -939,7 +968,7 @@ list_clients(){
         local CLIENT_NAME="$(awk '{print $1}' <<< "$LINE")"
 
         local CREATION_DATE="$(awk '{print $2}' <<< "$LINE")"
-        
+
         # Dates are converted from UNIX time to human readable.
         local CD_FORMAT="$(date -d @"$CREATION_DATE" +'%d %b %Y, %H:%M, %Z')"
 
@@ -992,7 +1021,7 @@ create_client(){
             fi
         fi
     done
-    
+
     while true; do
         read -r -s -p "Input a password for the client (press enter not to use it): " PASSWD1
         echo
@@ -1032,11 +1061,11 @@ create_client(){
             echo "Password must be between 4 and 1024 characters"
         fi
     done
-    
+
     cd pki
     {
     cat template.txt
- 
+
     echo "<ca>"
     cat ca.crt
     echo "</ca>"
@@ -1058,7 +1087,7 @@ create_client(){
     chown "$CURRENT_USER":"$CURRENT_USER" "$HOME_DIR/ovpns/$CLIENT_NAME.ovpn"
 
     echo "$CLIENT_NAME $(date +%s)" >> dates.txt
-        
+
     echo -e "\nConfiguration file for $CLIENT_NAME saved at $HOME_DIR/ovpns/$CLIENT_NAME.ovpn"
 }
 
@@ -1148,7 +1177,7 @@ uninstall_server(){
     source /etc/.install_settings
 
     read -r -p "Proceed with the server uninstallation? [Y/n] "
-    
+
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         if hash systemctl 2> /dev/null; then
             systemctl stop openvpn
