@@ -643,7 +643,7 @@ show_summary(){
         echo "- Domain name $REMOTE"
     fi
 
-    echo "- Protocol $(awk '{print toupper($0)}' <<< "$PROTO")"
+    echo "- Protocol $PROTO"
     echo "- Port $PORT"
     echo "- DNS server $DNS"
 
@@ -671,8 +671,9 @@ show_summary(){
     fi
 
     if [ "$IFACE_IP" != "$PUBLIC_IP" ]; then
-        echo -e "\nNOTE: since this server seems to be behind a NAT, to allow clients to initiate connections with the server you will need to forward, via the gateway $GW_IP, port $PORT to the local IP $IFACE_IP\n"
+        echo -e "\nNOTE: since this server seems to be behind a NAT, to allow clients to initiate connections with the server you will need to forward, via the gateway $GW_IP, port $PORT/$PROTO to the local IP $IFACE_IP"
     fi
+    echo
 }
 
 is_installed(){
@@ -888,7 +889,7 @@ verb 3" >> server.conf
 
     # We need to set the specific cipher otherwhise 2.4 peers will not honor the key size and just
     # negotiate AES-256-GCM.
-    if grep -q 'GCM' <<< "$KEY"; then
+    if [ "$OP_MODE" = "GCM" ]; then
         echo "ncp-ciphers $KEY" >> server.conf
     fi
 
