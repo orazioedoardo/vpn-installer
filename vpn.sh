@@ -785,7 +785,7 @@ if \$programname == 'ovpn-server' then stop" > /etc/rsyslog.d/30-openvpn.conf
 
     echo "/var/log/openvpn.log
 {
-    rotate 4m
+    rotate 4
     weekly
     missingok
     notifempty
