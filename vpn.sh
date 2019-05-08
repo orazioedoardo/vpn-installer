@@ -759,7 +759,7 @@ configure_firewall(){
         # there are no rules and the policy is not ACCEPT. Note that rules are being added to the top of the
         # chain (using -I).
         if [ "$INPUT_RULES_COUNT" -ne 0 ] || [ "$INPUT_POLICY" != "ACCEPT" ]; then
-            iptables -I INPUT 1 -i "$IFACE" -p "$PROTO" -m "$PROTO" --dport "$PORT" -j ACCEPT
+            iptables -I INPUT 1 -i "$IFACE" -p "$PROTO" --dport "$PORT" -j ACCEPT
             INPUT_CHAIN_EDITED="true"
         fi
 
@@ -803,10 +803,10 @@ create_pki(){
     if [ -d easy-rsa ]; then
         rm -rf easy-rsa
     fi
-    wget https://github.com/OpenVPN/easy-rsa/releases/download/v3.0.5/EasyRSA-nix-3.0.5.tgz
-    tar xzf EasyRSA-nix-3.0.5.tgz
-    mv EasyRSA-3.0.5 easy-rsa
-    rm -rf EasyRSA-nix-3.0.5.tgz
+    wget https://github.com/OpenVPN/easy-rsa/releases/download/v3.0.6/EasyRSA-unix-v3.0.6.tgz
+    tar xzf EasyRSA-unix-v3.0.6.tgz
+    mv EasyRSA-v3.0.6 easy-rsa
+    rm -rf EasyRSA-unix-v3.0.6.tgz
     chown root:root easy-rsa
 
     cd easy-rsa
@@ -1222,7 +1222,7 @@ uninstall_server(){
             ufw reload
         elif [ "$USE_UFW" = "false" ]; then
             if [ "$INPUT_CHAIN_EDITED" = "true" ]; then
-                iptables -D INPUT -i "$IFACE" -p "$PROTO" -m "$PROTO" --dport "$PORT" -j ACCEPT
+                iptables -D INPUT -i "$IFACE" -p "$PROTO" --dport "$PORT" -j ACCEPT
             fi
 
             if [ "$FORWARD_CHAIN_EDITED" = "true" ]; then
