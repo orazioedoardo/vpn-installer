@@ -41,7 +41,7 @@ main(){
 install_server(){
     # This file will store some user provided settings for later referencing. We delete it first
     # to make sure there are no leftovers from aborted installations.
-    rm -rf /etc/.install_settings
+    rm -f /etc/.install_settings
 
     # We use those variables to determine where to store .ovpn files and apply proper permissions.
     if [ -n "$SUDO_USER" ]; then
@@ -800,14 +800,11 @@ if \$programname == 'ovpn-server' then stop" > /etc/rsyslog.d/30-openvpn.conf
 
 create_pki(){
     cd /etc/openvpn
-    if [ -d easy-rsa ]; then
-        rm -rf easy-rsa
-    fi
-    wget https://github.com/OpenVPN/easy-rsa/releases/download/v3.0.6/EasyRSA-unix-v3.0.6.tgz
-    tar xzf EasyRSA-unix-v3.0.6.tgz
+    # Sometimes an old version of EasyRSA is installed alongside OpenVPN
+    rm -rf easy-rsa
+
+    wget -O- https://github.com/OpenVPN/easy-rsa/releases/download/v3.0.6/EasyRSA-unix-v3.0.6.tgz | tar xzo
     mv EasyRSA-v3.0.6 easy-rsa
-    rm -rf EasyRSA-unix-v3.0.6.tgz
-    chown root:root easy-rsa
 
     cd easy-rsa
     echo "set_var EASYRSA /etc/openvpn/easy-rsa" >> vars
@@ -1138,10 +1135,10 @@ revoke_client(){
                     fi
 
                     cd pki
-                    rm -rf "reqs/$CLIENT_NAME.req"
-                    rm -rf "private/$CLIENT_NAME.key"
-                    rm -rf "issued/$CLIENT_NAME.crt"
-                    rm -rf "ovpns/$CLIENT_NAME.ovpn"
+                    rm -f "reqs/$CLIENT_NAME.req"
+                    rm -f "private/$CLIENT_NAME.key"
+                    rm -f "issued/$CLIENT_NAME.crt"
+                    rm -f "ovpns/$CLIENT_NAME.ovpn"
                     cp crl.pem "/etc/openvpn/crl.pem"
 
                     # Find all .ovpn files in the home folder of the user matching the checksum of the
@@ -1149,7 +1146,7 @@ revoke_client(){
                     # many folders.
                     find "$HOME_DIR" -maxdepth 3 -type f -name '*.ovpn' -print0 | while IFS= read -r -d '' CONFIG; do
                         if sha256sum -c <<< "$REQUESTED  $CONFIG" &> /dev/null; then
-                            rm -rf "$CONFIG"
+                            rm -f "$CONFIG"
                         fi
                     done
 
@@ -1194,23 +1191,24 @@ uninstall_server(){
             REQUESTED="$(sha256sum "ovpns/$CLIENT_NAME.ovpn" | cut -c 1-64)"
             find "$HOME_DIR" -maxdepth 3 -type f -name '*.ovpn' -print0 | while IFS= read -r -d '' CONFIG; do
                 if sha256sum -c <<< "$REQUESTED  $CONFIG" &> /dev/null; then
-                    rm -rf "$CONFIG"
+                    rm -f "$CONFIG"
                 fi
             done
         done
 
-        rm -rf /etc/openvpn/server.conf
-        rm -rf /etc/openvpn/crl.pem
+        rm -f /etc/openvpn/server.conf
+        rm -f /etc/openvpn/crl.pem
         rm -rf /etc/openvpn/easy-rsa
 
-        rm -rf /var/log/openvpn.log
-        rm -rf /var/log/openvpn.log.*
-        rm -rf /var/log/openvpn-status.log
-        rm -rf /etc/logrotate.d/openvpn
-        rm -rf /etc/rsyslog.d/30-openvpn.conf
+        rm -f /var/log/openvpn.log
+        rm -f /var/log/openvpn.log.*
+        rm -f /var/log/openvpn-status.log
+        rm -f /etc/logrotate.d/openvpn
+        rm -f /etc/rsyslog.d/30-openvpn.conf
 
+        cd /etc
         if [ "$IP_FORWARD_STATUS" -eq 0 ]; then
-            sed "/net.ipv4.ip_forward=1/s/^/#/g" -i /etc/sysctl.conf
+            sed "/net.ipv4.ip_forward=1/s/^/#/g" -i sysctl.conf
             sysctl -p
         fi
 
@@ -1218,7 +1216,7 @@ uninstall_server(){
         if [ "$USE_UFW" = "true" ]; then
             ufw delete allow "$PORT"/"$PROTO"
             ufw route delete allow in on tun0 from 10.8.0.0/24 out on "$IFACE" to any
-            sed -z "s/*nat\n:POSTROUTING ACCEPT \[0:0\]\n-I POSTROUTING -s 10.8.0.0\/24 -o $IFACE -j MASQUERADE\nCOMMIT\n\n//" -i /etc/ufw/before.rules
+            sed -z "s/*nat\n:POSTROUTING ACCEPT \[0:0\]\n-I POSTROUTING -s 10.8.0.0\/24 -o $IFACE -j MASQUERADE\nCOMMIT\n\n//" -i ufw/before.rules
             ufw reload
         elif [ "$USE_UFW" = "false" ]; then
             if [ "$INPUT_CHAIN_EDITED" = "true" ]; then
@@ -1231,7 +1229,7 @@ uninstall_server(){
             fi
 
             iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o "$IFACE" -j MASQUERADE
-            iptables-save > /etc/iptables/rules.v4
+            iptables-save > iptables/rules.v4
         fi
 
         # During installation we saved the list of newly installed packages, now we prompt the user
@@ -1259,7 +1257,7 @@ uninstall_server(){
             echo -e "\nThe server has been uninstalled\n"
         fi
 
-        rm -rf /etc/.install_settings
+        rm -f .install_settings
 
         read -r -p "It is recommended to reboot after uninstallation, reboot now? [Y/n] "
         if [[ $REPLY =~ ^[Yy]$ ]]; then
